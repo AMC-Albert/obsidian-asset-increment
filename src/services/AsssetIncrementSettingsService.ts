@@ -38,8 +38,8 @@ export class AsssetIncrementSettingsService implements ISettingsService {
 		this.plugin = plugin;
 		this.currentSettings = { ...DEFAULT_SETTINGS };
 		
-		registerLoggerClass(this, 'SettingsService');
-		loggerDebug(this, 'SettingsService initialized');
+		registerLoggerClass(this, 'AsssetIncrementSettingsService');
+		loggerDebug(this, 'AsssetIncrementSettingsService initialized');
 	}
 
 	async loadSettings(): Promise<AssetIncrementSettings> {

@@ -40,9 +40,6 @@ export class AssetIncrementSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		// Header
-		containerEl.createEl('h2', { text: 'Asset Increment Settings' });
-
 		// rdiff-backup Configuration
 		new Setting(containerEl).setName('rdiff-backup Configuration').setHeading();
 		
