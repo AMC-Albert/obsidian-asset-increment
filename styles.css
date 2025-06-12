@@ -1,8 +1,50 @@
-/*
+/* Asset Increment Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.asset-margin-top {
+	margin-top: 0.5em;
+}
 
-If your plugin does not need CSS, delete this file.
+.multiple-text-component textarea {
+	width: 100%;
+	min-height: 80px;
+	font-family: var(--font-monospace);
+	resize: vertical;
+}
 
-*/
+.asset-reset-destructive-text {
+	color: var(--text-error) !important;
+}
+
+/* Collapsible settings sections */
+.setting-collapsible summary {
+	cursor: pointer;
+	user-select: none;
+}
+
+.setting-collapsible summary:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.setting-collapsible[open] summary {
+	margin-bottom: 1em;
+}
+
+/* Status indicators for backup operations */
+.asset-backup-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5em;
+	font-size: 0.9em;
+}
+
+.asset-backup-status.success {
+	color: var(--text-success);
+}
+
+.asset-backup-status.error {
+	color: var(--text-error);
+}
+
+.asset-backup-status.warning {
+	color: var(--text-warning);
+}

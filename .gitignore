@@ -15,6 +15,18 @@ main.js
 # Exclude sourcemaps
 *.map
 
+# Build outputs
+main.js
+*.js.map
+
+# rdiff-backup executables (if bundled)
+rdiff-backup
+rdiff-backup.exe
+
+# Backup directories (for testing)
+.asset-backups/
+backups/
+
 # obsidian
 data.json
 

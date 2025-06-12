@@ -1,94 +1,82 @@
-# Obsidian Sample Plugin
+# Asset Increment Plugin
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An Obsidian plugin that provides incremental versioning for binary asset files using rdiff-backup.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+- **Incremental Backups**: Efficient delta compression for asset files
+- **Auto-Detection**: Automatically detects rdiff-backup executable
+- **Multiple File Types**: Support for Blender files, 3D models, images, and more
+- **Efficiency Tracking**: Shows space savings from incremental backups
+- **Flexible Configuration**: Comprehensive settings for backup management
 
-## First time developing plugins?
+## Installation
 
-Quick starting guide for new plugin devs:
+### Option 1: Auto-Detection (Recommended)
+1. Download rdiff-backup for your platform
+2. Place the executable (`rdiff-backup.exe` on Windows, `rdiff-backup` on Unix) in the plugin's directory
+3. The plugin will automatically detect and use it
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### Option 2: System Installation
+1. Install rdiff-backup system-wide
+2. Ensure it's available in your PATH
+3. Plugin will detect it automatically
 
-## Releasing new releases
+### Option 3: Custom Path
+1. Install rdiff-backup anywhere
+2. Set the full path in plugin settings
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+## Detection Order
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+The plugin searches for rdiff-backup in this order:
+1. **Plugin directory** (`.obsidian/plugins/obsidian-asset-increment/`)
+2. **User-specified path** (from settings)
+3. **System PATH**
 
-## Adding your plugin to the community plugin list
+## Supported File Types
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+- **Blender**: `.blend`, `.blend1`, `.blend2`
+- **3D Models**: `.fbx`, `.obj`, `.dae`, `.gltf`, `.glb`, `.3ds`, `.max`, `.ma`, `.mb`
+- **Uncompressed Images**: `.bmp`, `.tiff`, `.tga`, `.exr`, `.hdr`
+- **Archives**: `.zip`, `.rar`, `.7z`, `.psd`, `.ai`, `.indd`
+- **Custom**: User-configurable extensions
 
-## How to use
+## Commands
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+- `Backup current asset file` - Create incremental backup
+- `Restore asset from backup` - Restore from backup history
+- `Show asset backup history` - View all increments
+- `Test rdiff-backup installation` - Verify setup
 
-## Manually installing the plugin
+## Configuration
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+Access settings via Settings → Community Plugins → Asset Increment
 
-## Improve code quality with eslint (optional)
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- To use eslint with this project, make sure to install eslint from terminal:
-  - `npm install -g eslint`
-- To use eslint to analyze this project use this command:
-  - `eslint main.ts`
-  - eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder:
-  - `eslint .\src\`
+### Key Settings
+- **Auto-backup on save**: Automatically backup when files change
+- **Efficiency notifications**: Show space savings information
+- **Cleanup policies**: Manage old backups automatically
+- **File type monitoring**: Configure which extensions to track
 
-## Funding URL
+## Usage
 
-You can include funding URLs where people who use your plugin can financially support it.
+1. Enable the plugin
+2. Configure file types to monitor in settings
+3. Use commands to backup/restore assets
+4. Enable auto-backup for seamless workflow
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+## Space Efficiency
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
-```
+This plugin uses rdiff-backup's binary delta compression, which is highly efficient for:
+- Blender files with incremental changes
+- Large texture files with minor modifications
+- 3D models with topology updates
+- Project files with embedded assets
 
-If you have multiple URLs, you can also do:
+Typical space savings: 70-90% for incremental changes.
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+## Requirements
 
-## API Documentation
-
-See https://github.com/obsidianmd/obsidian-api
+- Obsidian v1.0.0+
+- rdiff-backup executable
+- Sufficient disk space for backup repository
