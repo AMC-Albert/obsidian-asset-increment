@@ -122,6 +122,16 @@ export class AssetIncrementSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
+			.setName('Store backups adjacent to files')
+			.setDesc('Store backup data next to the original file instead of in a centralized backup directory. Creates a ".rdiff-backup" folder next to each file.')
+			.addToggle(toggle => toggle
+				.setValue(settings.storeBackupsAdjacentToFiles)
+				.onChange(async (value) => {
+					await this.settingsService.updateSetting('storeBackupsAdjacentToFiles', value);
+					loggerDebug(this, 'Updated adjacent backup storage setting', { enabled: value });
+				}));
+
+		new Setting(containerEl)
 			.setName('Test rdiff-backup installation')
 			.setDesc('Verify that rdiff-backup is properly installed and accessible.')
 			.addButton(button => button

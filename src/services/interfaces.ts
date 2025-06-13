@@ -60,6 +60,11 @@ export interface IBackupService {
 	backupFile(sourcePath: string, destinationPath: string, options?: BackupOptions): Promise<BackupResult>;
 
 	/**
+	 * Backup a file using adjacent storage (treats original file as working copy)
+	 */
+	backupFileAdjacent(sourcePath: string, destinationPath: string, options?: BackupOptions): Promise<BackupResult>;
+
+	/**
 	 * Restore a file from backup
 	 */
 	restoreFile(backupPath: string, restorePath: string, options?: RestoreOptions): Promise<BackupResult>;
@@ -128,11 +133,10 @@ export interface IFileService {
 	 * Get the absolute path for a file
 	 */
 	getAbsolutePath(relativePath: string): string;
-
 	/**
 	 * Get the backup location for a file
 	 */
-	getBackupLocation(file: TFile): Promise<string>;
+	getBackupLocation(file: TFile, useAdjacentStorage?: boolean): Promise<string>;
 
 	/**
 	 * Get the size of a file in bytes

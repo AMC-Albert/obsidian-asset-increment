@@ -163,6 +163,73 @@ export class RdiffBackupWrapper {
 	}
 
 	/**
+	 * Perform a backup operation with adjacent storage support
+	 * 
+	 * For adjacent storage, this treats the source file as the working copy
+	 * and creates the backup repository in the same directory
+	 */
+	async backupAdjacent(sourcePath: string, destinationPath: string, options: BackupOptions = {}): Promise<BackupResult> {
+		loggerDebug(this, `Starting adjacent backup: ${sourcePath} -> ${destinationPath}`);
+		try {
+			// Validate source exists
+			await fs.access(sourcePath);
+
+			const stats = await fs.stat(sourcePath);
+			if (!stats.isFile()) {
+				throw new Error('Adjacent backup only supports individual files');
+			}
+
+			// For adjacent backup with parent directory as repository:
+			// - sourcePath: the file to backup (e.g., /path/to/file.blend)
+			// - destinationPath: the parent directory (e.g., /path/to/)
+			// - Result: /path/to/rdiff-backup-data/ created alongside the original file
+			
+			const fileName = path.basename(sourcePath);
+			const parentDir = path.dirname(sourcePath);
+			
+			// Verify that destinationPath is indeed the parent directory
+			if (path.resolve(destinationPath) !== path.resolve(parentDir)) {
+				throw new Error(`Adjacent backup requires destination to be parent directory. Expected: ${parentDir}, Got: ${destinationPath}`);
+			}
+			// For adjacent backup, we backup the directory itself
+			// rdiff-backup will create rdiff-backup-data alongside the files
+			// Use --force to allow backing up to the same directory (required for first backup)
+			const modifiedOptions = { 
+				...options,
+				force: true // Always use force for adjacent backups since source = destination
+			};
+
+			loggerInfo(this, `Adjacent backup: backing up directory ${parentDir} to preserve ${fileName} (using --force)`);
+
+			const command = this.buildBackupCommand(parentDir, destinationPath, modifiedOptions);
+			const result = await this.executeCommand(command);
+
+			// Check if backup actually succeeded even if there were warnings (exit code 1)
+			if (result.success || (result.exitCode === 1 && await this.verifyBackupSuccess(destinationPath))) {
+				if (!result.success) {
+					// Override the success status if backup was actually created despite warnings
+					result.success = true;
+					loggerInfo(this, `Adjacent backup completed successfully despite warnings for ${fileName}`);
+				} else {
+					loggerInfo(this, `Adjacent backup completed successfully for ${fileName}`);
+				}
+				result.statistics = await this.parseBackupStatistics(destinationPath);
+			}
+
+			return result;
+		} catch (error) {
+			loggerError(this, `Adjacent backup failed: ${error}`);
+			return {
+				success: false,
+				stdout: '',
+				stderr: String(error),
+				exitCode: -1,
+				error: String(error)
+			};
+		}
+	}
+
+	/**
 	 * Perform a backup operation
 	 */
 	async backup(sourcePath: string, destinationPath: string, options: BackupOptions = {}): Promise<BackupResult> {
@@ -190,13 +257,18 @@ export class RdiffBackupWrapper {
 				modifiedOptions.exclude = ['**']; // Exclude everything else
 
 				loggerInfo(this, `Backing up single file: **/${normalizedPath} from directory: ${parentDir}`);
-			}
-
-			const command = this.buildBackupCommand(actualSourcePath, destinationPath, modifiedOptions);
+			}			const command = this.buildBackupCommand(actualSourcePath, destinationPath, modifiedOptions);
 			const result = await this.executeCommand(command);
 
-			if (result.success) {
-				loggerInfo(this, `Backup completed successfully for ${path.basename(sourcePath)}`);
+			// Check if backup actually succeeded even if there were warnings (exit code 1)
+			if (result.success || (result.exitCode === 1 && await this.verifyBackupSuccess(destinationPath))) {
+				if (!result.success) {
+					// Override the success status if backup was actually created despite warnings
+					result.success = true;
+					loggerInfo(this, `Backup completed successfully despite warnings for ${path.basename(sourcePath)}`);
+				} else {
+					loggerInfo(this, `Backup completed successfully for ${path.basename(sourcePath)}`);
+				}
 				result.statistics = await this.parseBackupStatistics(destinationPath);
 			}
 
@@ -341,10 +413,19 @@ export class RdiffBackupWrapper {
 			loggerWarn(this, `rdiff-backup not available: ${error}`);
 			return false;
 		}
-	}
+	}	private buildBackupCommand(sourcePath: string, destinationPath: string, options: BackupOptions): RdiffCommand {
+		const args = [];
 
-	private buildBackupCommand(sourcePath: string, destinationPath: string, options: BackupOptions): RdiffCommand {
-		const args = ['backup'];
+		// Add API version first (global argument)
+		args.push('--api-version', '201');
+		
+		// Add force flag if needed (global argument)
+		if (options.force) {
+			args.push('--force');
+		}
+		
+		// Add the backup subcommand
+		args.push('backup');
 
 		// Add create-full-path to ensure destination directory is created
 		args.push('--create-full-path');
@@ -372,9 +453,7 @@ export class RdiffBackupWrapper {
 			});
 		}
 
-		if (options.force) {
-			args.push('--force');
-		}
+		// Note: --force moved to global arguments section above
 
 		// Ensure paths use forward slashes for rdiff-backup on Windows
 		const normalizedSourcePath = sourcePath.replace(/\\/g, '/');
@@ -583,5 +662,20 @@ export class RdiffBackupWrapper {
 		}
 
 		return increments;
+	}
+
+	/**
+	 * Verify if a backup was actually successful by checking for rdiff-backup-data directory
+	 */
+	private async verifyBackupSuccess(destinationPath: string): Promise<boolean> {
+		try {
+			const rdiffDataPath = path.join(destinationPath, 'rdiff-backup-data');
+			await fs.access(rdiffDataPath);
+			loggerDebug(this, `Backup verification successful: rdiff-backup-data exists at ${rdiffDataPath}`);
+			return true;
+		} catch (error) {
+			loggerDebug(this, `Backup verification failed: rdiff-backup-data not found at ${destinationPath}`);
+			return false;
+		}
 	}
 }

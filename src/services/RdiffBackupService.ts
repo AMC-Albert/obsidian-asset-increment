@@ -126,6 +126,62 @@ export class RdiffBackupService implements IBackupService {
 		}
 	}
 
+	async backupFileAdjacent(sourcePath: string, destinationPath: string, options: BackupOptions = {}): Promise<BackupResult> {
+		try {
+			loggerInfo(this, `Starting adjacent file backup: ${sourcePath} -> ${destinationPath}`);
+			
+			// Validate inputs
+			if (!(await this.fileService.exists(sourcePath))) {
+				const error = `Source file does not exist: ${sourcePath}`;
+				loggerError(this, error);
+				return {
+					success: false,
+					stdout: '',
+					stderr: error,
+					exitCode: -1,
+					error
+				};
+			}
+
+			// Ensure backup service is available
+			if (!(await this.isAvailable())) {
+				const error = 'Backup service is not available';
+				loggerError(this, error);
+				return {
+					success: false,
+					stdout: '',
+					stderr: error,
+					exitCode: -1,
+					error
+				};
+			}
+
+			// Perform the adjacent backup
+			const result = await this.rdiffWrapper.backupAdjacent(sourcePath, destinationPath, options);
+			
+			if (result.success) {
+				loggerInfo(this, `Adjacent file backup completed successfully: ${sourcePath}`);
+			} else {
+				loggerWarn(this, `Adjacent file backup failed: ${sourcePath}`, { 
+					exitCode: result.exitCode, 
+					stderr: result.stderr 
+				});
+			}
+			
+			return result;
+		} catch (error) {
+			const errorMessage = `Adjacent backup operation failed: ${error}`;
+			loggerError(this, errorMessage, { error });
+			return {
+				success: false,
+				stdout: '',
+				stderr: errorMessage,
+				exitCode: -1,
+				error: errorMessage
+			};
+		}
+	}
+
 	async restoreFile(backupPath: string, restorePath: string, options: RestoreOptions = {}): Promise<BackupResult> {
 		try {
 			loggerInfo(this, `Starting file restore: ${backupPath} -> ${restorePath}`);

@@ -19,6 +19,7 @@ import {
 export const DEFAULT_SETTINGS: AssetIncrementSettings = {
 	rdiffExecutablePath: 'rdiff-backup',
 	backupDirectory: 'backups',
+	storeBackupsAdjacentToFiles: false,
 	monitoredExtensions: ['blend', 'blend1', 'blend2'],
 	autoBackupOnSave: true,
 	showEfficiencyNotifications: true,
@@ -166,6 +167,10 @@ export class AsssetIncrementSettingsService implements ISettingsService {
 
 		if (typeof settings.allowParallelOperations !== 'boolean') {
 			errors.push('allowParallelOperations must be a boolean');
+		}
+
+		if (typeof settings.storeBackupsAdjacentToFiles !== 'boolean') {
+			errors.push('storeBackupsAdjacentToFiles must be a boolean');
 		}
 
 		// Validate array properties

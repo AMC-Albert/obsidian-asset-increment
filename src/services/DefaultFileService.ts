@@ -157,21 +157,30 @@ export class DefaultFileService implements IFileService {
 		const absolutePath = path.join(this.vaultPath, relativePath);
 		loggerDebug(this, `Converted to absolute path: ${relativePath} -> ${absolutePath}`);
 		return absolutePath;
-	}
-
-	async getBackupLocation(file: any): Promise<string> {
+	}	async getBackupLocation(file: any, useAdjacentStorage: boolean = false): Promise<string> {
 		if (!this.vaultPath) {
 			throw new FileSystemError('Vault path not available for backup location');
 		}
 		
-		// Create backup directory structure: vault/.obsidian/plugins/asset-increment/backups/filename
-		const pluginDir = path.join(this.vaultPath, '.obsidian', 'plugins', 'asset-increment');
-		const backupDir = path.join(pluginDir, 'backups');
 		const fileName = file.name || file.basename || 'unknown';
-		const backupPath = path.join(backupDir, fileName);
 		
-		loggerDebug(this, `Generated backup location: ${file.path || fileName} -> ${backupPath}`);
-		return backupPath;
+		if (useAdjacentStorage) {
+			// Use the parent directory as the backup repository
+			// This way the original file stays in place and only rdiff-backup-data is added
+			const filePath = file.path || fileName;
+			const fileAbsolutePath = this.getAbsolutePath(filePath);
+			const parentDir = path.dirname(fileAbsolutePath);
+			
+			loggerDebug(this, `Generated adjacent backup location: ${filePath} -> ${parentDir} (parent directory as repository)`);			return parentDir;
+		} else {
+			// Original behavior: Create backup directory structure in plugin folder
+			const pluginDir = path.join(this.vaultPath, '.obsidian', 'plugins', 'asset-increment');
+			const backupDir = path.join(pluginDir, 'backups');
+			const backupPath = path.join(backupDir, fileName);
+			
+			loggerDebug(this, `Generated centralized backup location: ${file.path || fileName} -> ${backupPath}`);
+			return backupPath;
+		}
 	}
 
 	async getFileSize(filePath: string): Promise<number> {

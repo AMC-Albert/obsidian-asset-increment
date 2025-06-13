@@ -409,15 +409,27 @@ export class AssetManager {
 		const basePath = adapter.basePath || adapter.path || '';
 		return join(basePath, vaultPath);
 	}
-
 	private async getBackupLocation(file: TFile): Promise<string> {
-		const relativePath = file.path.replace(/[/\\]/g, '_').replace(/\./g, '_');
 		const adapter = this.vault.adapter as any;
 		const basePath = adapter.basePath || adapter.path || '';
-		const backupDir = this.settings.backupDirectory || 
-			join(basePath, '.asset-backups');
 		
-		return join(backupDir, relativePath);
+		if (this.settings.storeBackupsAdjacentToFiles) {
+			// Store backup data adjacent to the original file
+			const filePath = join(basePath, file.path);
+			const fileDir = dirname(filePath);
+			const fileName = file.name;
+			
+			// Create a directory named after the file for its backup data
+			// e.g., for "project.blend", create "project.blend.rdiff-backup/"
+			return join(fileDir, `${fileName}.rdiff-backup`);
+		} else {
+			// Original behavior: Use centralized backup directory
+			const relativePath = file.path.replace(/[/\\]/g, '_').replace(/\./g, '_');
+			const backupDir = this.settings.backupDirectory || 
+				join(basePath, '.asset-backups');
+			
+			return join(backupDir, relativePath);
+		}
 	}
 
 	private async ensureDirectoryExists(dirPath: string): Promise<void> {

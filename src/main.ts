@@ -17,8 +17,12 @@ const path = require('path');
 export default class AssetIncrementPluginImpl extends Plugin {
 	private serviceRegistry!: ServiceRegistry;
 	private assetService!: IAssetService;
-	private settingsService!: ISettingsService;
-	settings!: AssetIncrementSettings;
+	private settingsService!: ISettingsService;	settings!: AssetIncrementSettings;
+		// Timeout-based auto-backup delay
+	private autoBackupTimeouts = new Map<string, NodeJS.Timeout>();
+	private lastBackupTimes = new Map<string, number>();
+	private readonly BACKUP_DELAY_MS = 2000; // Wait 2 seconds after last modification before backing up
+	private readonly MIN_BACKUP_INTERVAL_MS = 5000; // Minimum 5 seconds between backups for same file
 
 	async onload(): Promise<void> {
 		// Initialize logging
@@ -54,7 +58,8 @@ export default class AssetIncrementPluginImpl extends Plugin {
 			loggerDebug(this, 'AssetService obtained');
 			
 			this.settings = this.settingsService.getSettings();
-			loggerDebug(this, 'Settings loaded');			// Register commands
+			loggerDebug(this, 'Settings loaded');
+			// Register commands
 			this.registerCommands();
 			loggerDebug(this, 'Commands registered');
 
@@ -88,10 +93,15 @@ export default class AssetIncrementPluginImpl extends Plugin {
 			console.error('Asset Increment Plugin detailed error:', error);
 			new Notice(`Failed to load Asset Increment Plugin: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		}
-	}
-
-	async onunload(): Promise<void> {
+	}	async onunload(): Promise<void> {
 		loggerInfo(this, 'Unloading Asset Increment Plugin');
+		
+		// Clear any pending auto-backup timeouts
+		for (const timeoutId of this.autoBackupTimeouts.values()) {
+			clearTimeout(timeoutId);
+		}
+		this.autoBackupTimeouts.clear();
+		this.lastBackupTimes.clear();
 		
 		if (this.serviceRegistry) {
 			await this.serviceRegistry.cleanup();
@@ -156,13 +166,14 @@ export default class AssetIncrementPluginImpl extends Plugin {
 				if (!this.isSupportedAsset(file)) {
 					new Notice('Current file is not a supported asset type');
 					return;
-				}
-
-				try {
+				}				try {
 					new Notice('Starting backup...');
 					const result = await this.assetService.backupAsset(file);
 					
 					if (result.success) {
+						// Record the backup time to prevent duplicate auto-backups
+						this.lastBackupTimes.set(file.path, Date.now());
+						
 						const message = this.settings.showEfficiencyNotifications && result.statistics 
 							? `Backup successful! Delta size: ${this.formatBytes(result.statistics.incrementFileSize)}`
 							: 'Backup completed successfully';
@@ -277,23 +288,59 @@ export default class AssetIncrementPluginImpl extends Plugin {
 				}
 			}
 		});
-	}
-	private registerEventHandlers(): void {
-		if (this.settings.autoBackupOnSave) {
-			// Listen for file modifications
-			this.registerEvent(
-				this.app.vault.on('modify', async (file: TFile) => {
-					if (this.isSupportedAsset(file)) {
+	}	private registerEventHandlers(): void {
+		// Always register the modify event handler, but check the setting inside
+		this.registerEvent(
+			this.app.vault.on('modify', async (file: TFile) => {
+				// Check the current setting value dynamically
+				const currentSettings = this.settingsService.getSettings();
+				if (currentSettings.autoBackupOnSave && this.isSupportedAsset(file)) {
+					// Clear any existing timeout for this file
+					const existingTimeout = this.autoBackupTimeouts.get(file.path);
+					if (existingTimeout) {
+						clearTimeout(existingTimeout);
+						loggerDebug(this, `Clearing existing auto-backup timeout for: ${file.path}`);
+					}
+							// Set a new timeout to backup after the delay
+					const timeoutId = setTimeout(async () => {
 						try {
-							loggerDebug(this, `Auto-backup triggered for: ${file.path}`);
-							await this.assetService.backupAsset(file);
+							// Double-check that we haven't backed up recently
+							const now = Date.now();
+							const lastBackup = this.lastBackupTimes.get(file.path);
+							if (lastBackup && (now - lastBackup) < this.MIN_BACKUP_INTERVAL_MS) {
+								loggerDebug(this, `Skipping auto-backup for: ${file.path} (recent backup ${now - lastBackup}ms ago)`);
+								return;
+							}
+							
+							loggerDebug(this, `Auto-backup triggered for: ${file.path} (after ${this.BACKUP_DELAY_MS}ms delay)`);
+							const result = await this.assetService.backupAsset(file);
+							
+							// Record the backup time
+							this.lastBackupTimes.set(file.path, Date.now());
+							
+							// Show efficiency notification for auto-backups if enabled
+							if (result.success && currentSettings.showEfficiencyNotifications) {
+								const message = result.statistics 
+									? `Auto-backup: ${file.name} - Delta: ${this.formatBytes(result.statistics.incrementFileSize)}`
+									: `Auto-backup: ${file.name} completed`;
+								new Notice(message, 3000); // Show for 3 seconds (shorter than manual backups)
+							}
 						} catch (error) {
 							loggerError(this, 'Auto-backup failed', { file: file.path, error });
+							// Optionally show error notification for auto-backups too
+							new Notice(`Auto-backup failed for ${file.name}`, 2000);
+						} finally {
+							// Remove the timeout from our tracking map
+							this.autoBackupTimeouts.delete(file.path);
 						}
-					}
-				})
-			);
-		}
+					}, this.BACKUP_DELAY_MS);
+					
+					// Store the timeout ID so we can clear it if needed
+					this.autoBackupTimeouts.set(file.path, timeoutId);
+					loggerDebug(this, `Scheduled auto-backup for: ${file.path} in ${this.BACKUP_DELAY_MS}ms`);
+				}
+			})
+		);
 	}
 
 	private formatBytes(bytes: number): string {

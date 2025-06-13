@@ -71,13 +71,12 @@ export class DefaultAssetService implements IAssetService {
 			if (!this.initialized) {
 				await this.initialize();
 			}
-
 			// Get settings to determine backup behavior
 			const settings = this.settingsService.getSettings();
 			
 			// Get file information
 			const sourcePath = this.fileService.getAbsolutePath(file.path);
-			const backupPath = await this.fileService.getBackupLocation(file);
+			const backupPath = await this.fileService.getBackupLocation(file, settings.storeBackupsAdjacentToFiles);
 			const fileSize = await this.fileService.getFileSize(sourcePath);
 			
 			// Determine backup options based on file size and settings
@@ -97,13 +96,13 @@ export class DefaultAssetService implements IAssetService {
 
 			// Ensure backup directory exists
 			const backupDir = await this.fileService.getParentDirectory(backupPath);
-			await this.fileService.ensureDirectoryExists(backupDir);
-
-			// Get next version number for tracking
+			await this.fileService.ensureDirectoryExists(backupDir);			// Get next version number for tracking
 			const nextVersion = await this.versioningService.getNextVersion(sourcePath, backupPath);
 			
-			// Perform the backup
-			const result = await this.backupService.backupFile(sourcePath, backupPath, backupOptions);
+			// Perform the backup using the appropriate method
+			const result = settings.storeBackupsAdjacentToFiles 
+				? await this.backupService.backupFileAdjacent(sourcePath, backupPath, backupOptions)
+				: await this.backupService.backupFile(sourcePath, backupPath, backupOptions);
 			
 			if (result.success) {
 				// Create version metadata for this backup
@@ -136,12 +135,12 @@ export class DefaultAssetService implements IAssetService {
 	async restoreAsset(file: TFile, increment?: string): Promise<BackupResult> {
 		try {
 			loggerInfo(this, `Starting asset restore for: ${file.path}`, { increment });
-			
 			if (!this.initialized) {
 				await this.initialize();
 			}
 
-			const backupPath = await this.fileService.getBackupLocation(file);
+			const settings = this.settingsService.getSettings();
+			const backupPath = await this.fileService.getBackupLocation(file, settings.storeBackupsAdjacentToFiles);
 			const restorePath = this.fileService.getAbsolutePath(file.path);
 			
 			// Check if backup exists
@@ -202,7 +201,8 @@ export class DefaultAssetService implements IAssetService {
 		try {
 			loggerDebug(this, `Getting backup info for asset: ${file.path}`);
 			
-			const backupPath = await this.fileService.getBackupLocation(file);
+			const settings = this.settingsService.getSettings();
+			const backupPath = await this.fileService.getBackupLocation(file, settings.storeBackupsAdjacentToFiles);
 			const hasBackup = await this.fileService.exists(backupPath);
 			
 			if (!hasBackup) {
@@ -283,7 +283,8 @@ export class DefaultAssetService implements IAssetService {
 	async getAssetVersionHistory(file: TFile): Promise<BackupVersionInfo[]> {
 		try {
 			loggerDebug(this, `Getting version history for: ${file.path}`);
-			const backupPath = await this.fileService.getBackupLocation(file);
+			const settings = this.settingsService.getSettings();
+			const backupPath = await this.fileService.getBackupLocation(file, settings.storeBackupsAdjacentToFiles);
 			const history = await this.versioningService.getBackupHistory(file.path, backupPath);
 			return history.versions;
 		} catch (error) {
@@ -297,7 +298,8 @@ export class DefaultAssetService implements IAssetService {
 	 */
 	async getCurrentVersion(file: TFile): Promise<string> {
 		try {
-			const backupPath = await this.fileService.getBackupLocation(file);
+			const settings = this.settingsService.getSettings();
+			const backupPath = await this.fileService.getBackupLocation(file, settings.storeBackupsAdjacentToFiles);
 			const history = await this.versioningService.getBackupHistory(file.path, backupPath);
 			return history.currentVersion;
 		} catch (error) {

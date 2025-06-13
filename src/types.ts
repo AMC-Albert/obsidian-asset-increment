@@ -3,6 +3,7 @@ import type { Plugin } from 'obsidian';
 export interface AssetIncrementSettings {
 	rdiffExecutablePath: string;
 	backupDirectory: string;
+	storeBackupsAdjacentToFiles: boolean; // Store backup data next to the original file
 	monitoredExtensions: string[];
 	autoBackupOnSave: boolean;
 	showEfficiencyNotifications: boolean;
@@ -73,6 +74,7 @@ export interface RdiffCommand {
 export const DEFAULT_SETTINGS: AssetIncrementSettings = {
 	rdiffExecutablePath: 'rdiff-backup',
 	backupDirectory: '.asset-backups',
+	storeBackupsAdjacentToFiles: false,
 	monitoredExtensions: ['blend', 'blend1', 'blend2'],
 	autoBackupOnSave: false,
 	showEfficiencyNotifications: true,
