@@ -9,7 +9,7 @@ export * from './interfaces';
 
 // Services
 export { DefaultFileService } from './DefaultFileService';
-export { RdiffBackupService } from './RdiffBackupService';
+export { ResticBackupService } from './ResticBackupService';
 export { DefaultAssetService } from './DefaultAssetService';
 export { PluginSettingsService } from './PluginSettingsService';
 export { CommandService } from './CommandService';

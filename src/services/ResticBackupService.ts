@@ -1,12 +1,12 @@
 /**
- * Backup service implementation using rdiff-backup
+ * Backup service implementation using restic
  * 
  * Provides high-level backup operations following the service interface pattern.
- * Wraps the RdiffBackupWrapper with additional business logic and error handling.
+ * Wraps the resticBackupWrapper with additional business logic and error handling.
  */
 
 import { IBackupService, IFileService, ICommandService } from './interfaces';
-import { RdiffBackupWrapper } from '../RdiffBackupWrapper';
+import { ResticBackupWrapper } from '../ResticBackupWrapper';
 import { 
 	BackupOptions, 
 	RestoreOptions, 
@@ -22,8 +22,8 @@ import {
 	registerLoggerClass 
 } from '../utils/obsidian-logger';
 
-export class RdiffBackupService implements IBackupService {
-	private rdiffWrapper: RdiffBackupWrapper;
+export class ResticBackupService implements IBackupService {
+	private resticWrapper: ResticBackupWrapper;
 	private fileService: IFileService;
 	private commandService: ICommandService;
 	private initialized = false;
@@ -36,7 +36,7 @@ export class RdiffBackupService implements IBackupService {
 	) {
 		this.fileService = fileService;
 		this.commandService = commandService;
-		this.rdiffWrapper = new RdiffBackupWrapper(rdiffPath || 'rdiff-backup', pluginDir);
+		this.resticWrapper = new ResticBackupWrapper(rdiffPath || 'restic', pluginDir);
 		
 		registerLoggerClass(this, 'BackupService');
 		loggerDebug(this, 'BackupService initialized', { pluginDir, rdiffPath });
@@ -45,7 +45,7 @@ export class RdiffBackupService implements IBackupService {
 	async initialize(): Promise<void> {
 		try {
 			loggerInfo(this, 'Initializing backup service...');
-			await this.rdiffWrapper.initialize();
+			await this.resticWrapper.initialize();
 			this.initialized = true;
 			loggerInfo(this, 'Backup service initialized successfully');
 		} catch (error) {
@@ -61,7 +61,7 @@ export class RdiffBackupService implements IBackupService {
 				await this.initialize();
 			}
 			
-			const available = await this.rdiffWrapper.isAvailable();
+			const available = await this.resticWrapper.isAvailable();
 			loggerDebug(this, `Backup service availability: ${available}`);
 			return available;
 		} catch (error) {
@@ -101,7 +101,7 @@ export class RdiffBackupService implements IBackupService {
 			}
 
 			// Perform the backup
-			const result = await this.rdiffWrapper.backup(sourcePath, destinationPath, options);
+			const result = await this.resticWrapper.backup(sourcePath, destinationPath, options);
 			
 			if (result.success) {
 				loggerInfo(this, `File backup completed successfully: ${sourcePath}`);
@@ -157,7 +157,7 @@ export class RdiffBackupService implements IBackupService {
 			}
 
 			// Perform the adjacent backup
-			const result = await this.rdiffWrapper.backupAdjacent(sourcePath, destinationPath, options);
+			const result = await this.resticWrapper.backupAdjacent(sourcePath, destinationPath, options);
 			
 			if (result.success) {
 				loggerInfo(this, `Adjacent file backup completed successfully: ${sourcePath}`);
@@ -182,13 +182,15 @@ export class RdiffBackupService implements IBackupService {
 		}
 	}
 
-	async restoreFile(backupPath: string, restorePath: string, options: RestoreOptions = {}): Promise<BackupResult> {
-		try {
+	async restoreFile(backupPath: string, restorePath: string, options: RestoreOptions = {}): Promise<BackupResult> {		try {
 			loggerInfo(this, `Starting file restore: ${backupPath} -> ${restorePath}`);
 			
-			// Validate inputs
-			if (!(await this.fileService.exists(backupPath))) {
-				const error = `Backup path does not exist: ${backupPath}`;
+			// For restic, backupPath is the repository path, we need to get the latest snapshot
+			const repositoryPath = backupPath.endsWith('restic-repository') ? backupPath : `${backupPath}/restic-repository`;
+			
+			// Validate repository exists
+			if (!(await this.fileService.exists(repositoryPath))) {
+				const error = `Repository path does not exist: ${repositoryPath}`;
 				loggerError(this, error);
 				return {
 					success: false,
@@ -212,8 +214,11 @@ export class RdiffBackupService implements IBackupService {
 				};
 			}
 
+			// Get the latest snapshot or use specified snapshot
+			const snapshotId = options.at || 'latest';
+
 			// Perform the restore
-			const result = await this.rdiffWrapper.restore(backupPath, restorePath, options);
+			const result = await this.resticWrapper.restore(repositoryPath, snapshotId, restorePath, options);
 			
 			if (result.success) {
 				loggerInfo(this, `File restore completed successfully: ${restorePath}`);
@@ -272,8 +277,8 @@ export class RdiffBackupService implements IBackupService {
 				return [];
 			}
 
-			const increments = await this.rdiffWrapper.listIncrements(backupPath);
-			const incrementStrings = increments.map(inc => 
+			const increments = await this.resticWrapper.listIncrements(backupPath);
+			const incrementStrings = increments.map((inc: BackupIncrement) => 
 				typeof inc === 'string' ? inc : inc.timestamp || 'unknown'
 			);
 			

@@ -1,7 +1,7 @@
 {
 	"name": "asset-increment",
 	"version": "0.0.2",
-	"description": "Incremental asset versioning using rdiff-backup for efficient binary file management",
+	"description": "Incremental asset versioning using restic for efficient binary file management",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

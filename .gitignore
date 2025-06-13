@@ -19,9 +19,9 @@ main.js
 main.js
 *.js.map
 
-# rdiff-backup executables (if bundled)
-rdiff-backup
-rdiff-backup.exe
+# restic executables (if bundled)
+restic
+restic.exe
 
 # Backup directories (for testing)
 .asset-backups/

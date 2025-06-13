@@ -1,12 +1,13 @@
 import { TFile, Vault, normalizePath, App } from 'obsidian';
 import { stat, mkdir, access } from 'fs/promises';
 import { join, dirname, basename, extname } from 'path';
-import { RdiffBackupWrapper } from './RdiffBackupWrapper';
+import { ResticBackupWrapper } from './ResticBackupWrapper';
 import { 
 	AssetInfo, 
 	BackupOptions, 
 	RestoreOptions, 
 	BackupResult,
+	BackupIncrement,
 	AssetIncrementSettings
 } from './types';
 import { 
@@ -21,7 +22,7 @@ export class AssetManager {
 	private app: App;
 	private vault: Vault;
 	private settings: AssetIncrementSettings;
-	private rdiffWrapper: RdiffBackupWrapper;
+	private resticWrapper: ResticBackupWrapper;
 	private assetsCache = new Map<string, AssetInfo>();
 	private vaultPath: string;
 	constructor(app: App, settings: AssetIncrementSettings, pluginId?: string) {
@@ -46,7 +47,7 @@ export class AssetManager {
 			calculatedPluginDir: pluginDir
 		});
 			
-		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffBackupPath, pluginDir);
+		this.resticWrapper = new ResticBackupWrapper(settings.resticPath, pluginDir);
 		
 		// Store vault base path for later use
 		this.vaultPath = vaultBasePath;
@@ -57,7 +58,7 @@ export class AssetManager {
 	 * Initialize the asset manager
 	 */
 	async initialize(): Promise<void> {
-		await this.rdiffWrapper.initialize();
+		await this.resticWrapper.initialize();
 		loggerInfo(this, 'AssetManager initialized');
 	}
 
@@ -98,7 +99,7 @@ export class AssetManager {
 			const fileSize = await this.getFileSize(sourcePath);
 			const useCompression = this.shouldUseCompression(fileSize);
 			const backupOptions: BackupOptions = {
-				// apiVersion: '201', // Removed - not supported in rdiff-backup 2.2.6
+				// apiVersion: '201', // Removed - not supported in restic 2.2.6
 				compression: useCompression,
 				exclude: ['*.tmp', '*.log', '.DS_Store'], // Default exclude patterns
 				...options
@@ -106,7 +107,7 @@ export class AssetManager {
 
 			loggerInfo(this, `Backing up ${file.name} (${this.formatFileSize(fileSize)}) with compression: ${useCompression}`);
 
-			const result = await this.rdiffWrapper.backup(sourcePath, backupLocation, backupOptions);
+			const result = await this.resticWrapper.backupAdjacent(sourcePath, backupLocation, backupOptions);
 
 			if (result.success) {
 				await this.updateAssetInfo(file, backupLocation, result);
@@ -138,12 +139,16 @@ export class AssetManager {
 
 		try {
 			const backupLocation = await this.getBackupLocation(file);
-			const restorePath = this.getAbsolutePath(file.path + '.restored');
+			const restorePath = this.getAbsolutePath(file.path + '.restored');			// For restic, backupLocation is the .meta directory, we need the repository path
+			const repositoryPath = `${backupLocation}/restic-repository`;
+			
+			// Check if repository exists
+			await access(repositoryPath);
 
-			// Check if backup exists
-			await access(backupLocation);
+			// Use latest snapshot if no specific version requested
+			const snapshotId = options.at || 'latest';
 
-			const result = await this.rdiffWrapper.restore(backupLocation, restorePath, options);
+			const result = await this.resticWrapper.restore(repositoryPath, snapshotId, restorePath, options);
 
 			if (result.success) {
 				loggerInfo(this, `Asset restored successfully to ${restorePath}`);
@@ -175,10 +180,10 @@ export class AssetManager {
 				await access(backupLocation);
 			} catch {
 				return null; // No backup exists
-			}
-
-			const originalSize = await this.getFileSize(sourcePath);
-			const increments = await this.rdiffWrapper.listIncrements(backupLocation);
+			}			const originalSize = await this.getFileSize(sourcePath);
+			// For restic, use repository path
+			const repositoryPath = `${backupLocation}/restic-repository`;
+			const increments = await this.resticWrapper.listIncrements(repositoryPath);
 			const totalBackupSize = await this.calculateBackupSize(backupLocation);
 
 			const assetInfo: AssetInfo = {
@@ -201,13 +206,14 @@ export class AssetManager {
 
 	/**
 	 * Get backup history for an asset
-	 */
-	async getAssetHistory(file: TFile): Promise<{ timestamp: string; size: number }[]> {
+	 */	async getAssetHistory(file: TFile): Promise<{ timestamp: string; size: number }[]> {
 		try {
 			const backupLocation = await this.getBackupLocation(file);
-			const increments = await this.rdiffWrapper.listIncrements(backupLocation);
+			// For restic, use repository path
+			const repositoryPath = `${backupLocation}/restic-repository`;
+			const increments = await this.resticWrapper.listIncrements(repositoryPath);
 			
-			return increments.map(inc => ({
+			return increments.map((inc: BackupIncrement) => ({
 				timestamp: inc.timestamp,
 				size: inc.size
 			}));
@@ -235,27 +241,28 @@ export class AssetManager {
 
 		return assets;
 	}
-
 	/**
 	 * Clean up old increments based on settings
 	 */	async cleanupOldIncrements(file: TFile): Promise<void> {
 		try {
 			const backupLocation = await this.getBackupLocation(file);
-			const increments = await this.rdiffWrapper.listIncrements(backupLocation);
+			// For restic, use repository path
+			const repositoryPath = `${backupLocation}/restic-repository`;
+			const increments = await this.resticWrapper.listIncrements(repositoryPath);
 
 			// Use cleanupAfterDays setting for cleanup
 			if (this.settings.maxBackupAgeDays > 0) {
 				const cutoffDate = new Date();
 				cutoffDate.setDate(cutoffDate.getDate() - this.settings.maxBackupAgeDays);
 				
-				const oldIncrements = increments.filter(inc => {
+				const oldIncrements = increments.filter((inc: BackupIncrement) => {
 					const incDate = new Date(inc.timestamp);
 					return incDate < cutoffDate;
 				});
 
 				if (oldIncrements.length > 0) {
 					loggerInfo(this, `Cleaning up ${oldIncrements.length} old increments for ${file.name}`);
-					// This would require implementing rdiff-backup remove increments command
+					// This would require implementing restic remove increments command
 					// For now, just log the intention
 					loggerDebug(this, `Would remove ${oldIncrements.length} oldest increments`);
 				}
@@ -266,10 +273,10 @@ export class AssetManager {
 	}
 
 	/**
-	 * Check if rdiff-backup is available
+	 * Check if restic is available
 	 */
-	async isRdiffAvailable(): Promise<boolean> {
-		return await this.rdiffWrapper.isAvailable();
+	async isResticAvailable(): Promise<boolean> {
+		return await this.resticWrapper.isAvailable();
 	}
 
 	/**
@@ -279,15 +286,15 @@ export class AssetManager {
 		this.settings = settings;
 		// Update settings reference
 		this.settings = settings;
-		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffBackupPath);
+		this.resticWrapper = new ResticBackupWrapper(settings.resticPath);
 		this.assetsCache.clear(); // Clear cache as backup locations might have changed
 	}
 	/**
-	 * Test if rdiff-backup is properly installed and accessible
+	 * Test if restic is properly installed and accessible
 	 */
-	async testRdiffInstallation(): Promise<{ success: boolean; version?: string; error?: string }> {		try {
+	async testResticInstallation(): Promise<{ success: boolean; version?: string; error?: string }> {		try {
 			// Use the existing isAvailable method
-			const isAvailable = await this.rdiffWrapper.isAvailable();
+			const isAvailable = await this.resticWrapper.isAvailable();
 			if (isAvailable) {
 				// Try to get info to confirm it's working
 				return {
@@ -297,11 +304,11 @@ export class AssetManager {
 			} else {
 				return {
 					success: false,
-					error: 'rdiff-backup not available'
+					error: 'restic not available'
 				};
 			}
 		} catch (error) {
-			loggerError(this, 'Failed to test rdiff-backup installation', { error });
+			loggerError(this, 'Failed to test restic installation', { error });
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : String(error)
@@ -391,7 +398,7 @@ export class AssetManager {
 	private async getRepositorySize(repoPath: string): Promise<{ size: number; efficiency?: number } | null> {
 		try {
 			// This is a simplified implementation - in reality you'd want to
-			// parse the rdiff-backup metadata for accurate statistics
+			// parse the restic metadata for accurate statistics
 			const stat = await this.app.vault.adapter.stat(repoPath);
 			return {
 				size: stat?.size || 0,
@@ -420,8 +427,8 @@ export class AssetManager {
 			const fileName = file.name;
 			
 			// Create a directory named after the file for its backup data
-			// e.g., for "project.blend", create "project.blend.rdiff-backup/"
-			return join(fileDir, `${fileName}.rdiff-backup`);
+			// e.g., for "project.blend", create "project.blend.restic/"
+			return join(fileDir, `${fileName}.restic`);
 		} else {
 			// Original behavior: Use centralized backup directory
 			const relativePath = file.path.replace(/[/\\]/g, '_').replace(/\./g, '_');
@@ -451,7 +458,7 @@ export class AssetManager {
 		}
 	}
 	private shouldUseCompression(fileSize: number): boolean {
-		// For rdiff-backup efficiency, we generally want to avoid compression
+		// For restic efficiency, we generally want to avoid compression
 		// as it interferes with delta calculation
 		return false;
 	}

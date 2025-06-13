@@ -176,15 +176,35 @@ export default class AssetIncrementPluginImpl extends Plugin {
 				}				try {
 					new Notice('Starting backup...');
 					const result = await this.assetService.backupAsset(file);
-					
-					if (result.success) {
+							if (result.success) {
 						// Record the backup time to prevent duplicate auto-backups
 						this.lastBackupTimes.set(file.path, Date.now());
 						
-						const message = this.settings.showEfficiencyNotifications && result.statistics 
-							? `Backup successful! Delta size: ${this.formatBytes(result.statistics.incrementFileSize)}`
-							: 'Backup completed successfully';
-						new Notice(message);
+						if (this.settings.showEfficiencyNotifications && result.statistics) {
+							const deltaSize = this.formatBytes(result.statistics.incrementFileSize || 0);
+							const compressionRatio = result.statistics.compressionRatio?.toFixed(1) || '0.0';
+							const spaceSavings = result.statistics.spaceSavings?.toFixed(1) || '0.0';
+							const changedFiles = result.statistics.changedFiles || 0;
+							
+							let message = `Backup successful.\nDelta: ${deltaSize} (${compressionRatio}% of original)`;
+							
+							if (result.statistics.spaceSavings && result.statistics.spaceSavings > 0) {
+								message += `\nSpace savings: ${spaceSavings}%`;
+							}
+							
+							if (changedFiles > 0) {
+								message += `\nFiles: ${changedFiles} changed`;
+							}
+							
+							// Show version info if available
+							if (result.versionInfo?.version) {
+								message += `\nVersion: ${result.versionInfo.version}`;
+							}
+							
+							new Notice(message, 6000); // Show for 6 seconds
+						} else {
+							new Notice('Backup completed successfully');
+						}
 					} else {
 						new Notice(`Backup failed: ${result.error || 'Unknown error'}`);
 					}
@@ -260,17 +280,17 @@ export default class AssetIncrementPluginImpl extends Plugin {
 			}
 		});
 
-		// Test rdiff-backup
+		// Test restic
 		this.addCommand({
-			id: 'test-rdiff-backup',
-			name: 'Test rdiff-backup installation',
+			id: 'test-restic',
+			name: 'Test restic installation',
 			callback: async () => {
 				try {
 					const isReady = await this.assetService.testBackupSystem();
 					if (isReady) {
-						new Notice(`✅ rdiff-backup is working!`);
+						new Notice(`✅ restic is working!`);
 					} else {
-						new Notice(`❌ rdiff-backup test failed`);
+						new Notice(`❌ restic test failed`);
 					}
 				} catch (error) {
 					new Notice(`❌ Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -324,13 +344,16 @@ export default class AssetIncrementPluginImpl extends Plugin {
 							
 							// Record the backup time
 							this.lastBackupTimes.set(file.path, Date.now());
-							
-							// Show efficiency notification for auto-backups if enabled
+									// Show efficiency notification for auto-backups if enabled
 							if (result.success && currentSettings.showEfficiencyNotifications) {
-								const message = result.statistics 
-									? `Auto-backup: ${file.name} - Delta: ${this.formatBytes(result.statistics.incrementFileSize)}`
-									: `Auto-backup: ${file.name} completed`;
-								new Notice(message, 3000); // Show for 3 seconds (shorter than manual backups)
+								if (result.statistics) {
+									const deltaSize = this.formatBytes(result.statistics.incrementFileSize || 0);
+									const compressionRatio = result.statistics.compressionRatio?.toFixed(1) || '0.0';
+									const message = `Auto-backup: ${file.name}\nDetla: ${deltaSize} (${compressionRatio}% of original)`;
+									new Notice(message, 3000); // Show for 3 seconds (shorter than manual backups)
+								} else {
+									new Notice(`Auto-backup: ${file.name} completed`, 3000);
+								}
 							}
 						} catch (error) {
 							loggerError(this, 'Auto-backup failed', { file: file.path, error });
@@ -376,7 +399,7 @@ export default class AssetIncrementPluginImpl extends Plugin {
 	}
 
 	/**
-	 * Helper to move a directory (rdiff-backup-data) to a new location
+	 * Helper to move a directory (restic-data) to a new location
 	 * This is still used by other parts of the plugin for non-rename operations
 	 */
 	private async moveDirectory(sourcePath: string, destinationPath: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { TFile, Notice, FileSystemAdapter } from 'obsidian';
 import type { AssetIncrementSettings } from '../types'; // Ensure LogLevel is imported or defined if used here
 import type { IAssetService, IFileService, ISettingsService, IBackupService } from './interfaces'; // Corrected to IBackupService
+import { ASSET_META_SUFFIX } from '../constants';
 import {
 	loggerDebug,
 	loggerInfo,
@@ -23,78 +24,104 @@ interface RenameLogEntry {
 export interface IBackupIntegrityService {
 	handleFileRename(file: TFile, oldPath: string): Promise<void>;
 	getHistoricalPaths(currentPath: string): Promise<string[]>;
-	loadRenameLog(): Promise<void>;
 }
 
 export class BackupIntegrityService implements IBackupIntegrityService {
-	private renameLog: RenameLogEntry[] = [];
-	private readonly renameLogPath: string;
-
 	constructor(
 		private app: any,
 		private settingsService: ISettingsService,
 		private assetService: IAssetService,
 		private fileService: IFileService,
-		private backupService: IBackupService, // Corrected to IBackupService
+		private backupService: IBackupService,
 		private lastBackupTimes: Map<string, number>
 	) {
 		registerLoggerClass(this, 'BackupIntegrityService');
-		const adapter = this.app.vault.adapter;
-		if (adapter instanceof FileSystemAdapter) {
-			this.renameLogPath = path.join(adapter.getBasePath(), this.app.vault.configDir, 'asset-increment-rename-log.json');
-		} else {
-			// Fallback or error if not FileSystemAdapter, though Obsidian plugins usually run in environments where it is.
-			this.renameLogPath = 'asset-increment-rename-log.json'; // This might not be ideal
-			loggerError(this, 'FileSystemAdapter not available, rename log path may be incorrect.');
-		}
-		this.loadRenameLog();
+	}	/**
+	 * Get the rename log path for a specific asset
+	 */
+	private getRenameLogPath(assetPath: string): string {
+		// Convert to absolute path if it's vault-relative
+		const absoluteAssetPath = this.getAbsolutePathFromVaultPath(assetPath);
+		const metaDir = `${absoluteAssetPath}${ASSET_META_SUFFIX}`;
+		// Use path.resolve to normalize path separators for the platform
+		return path.resolve(path.join(metaDir, 'rename-log.json'));
 	}
 
-	async loadRenameLog(): Promise<void> {
+	/**
+	 * Load rename log for a specific asset
+	 */
+	private async loadRenameLog(assetPath: string): Promise<RenameLogEntry[]> {
 		try {
-			if (await this.fileService.exists(this.renameLogPath)) {
-				const logContent = await fs.readFile(this.renameLogPath, 'utf-8');
-				this.renameLog = JSON.parse(logContent);
-				loggerInfo(this, 'Rename log loaded successfully.');
+			const logPath = this.getRenameLogPath(assetPath);			if (await this.fileService.exists(logPath)) {
+				const logContent = await fs.readFile(logPath, 'utf-8');
+				const renameLog = JSON.parse(logContent);
+				loggerInfo(this, `Rename log loaded for asset: ${assetPath} (${renameLog.length} entries)`);
+				return renameLog;
 			} else {
-				loggerInfo(this, 'No existing rename log found. A new one will be created if needed.');
-				this.renameLog = [];
+				loggerDebug(this, `No rename log found for asset: ${assetPath}`);
+				return [];
 			}
 		} catch (error) {
-			loggerError(this, 'Failed to load rename log', { error });
-			this.renameLog = []; // Start with an empty log if loading fails
+			loggerError(this, `Failed to load rename log for asset: ${assetPath}`, { error });
+			return []; // Start with an empty log if loading fails
 		}
 	}
-
-	private async saveRenameLog(): Promise<void> {
+	/**
+	 * Save rename log for a specific asset
+	 */	private async saveRenameLog(assetPath: string, renameLog: RenameLogEntry[]): Promise<void> {
 		try {
-			await fs.writeFile(this.renameLogPath, JSON.stringify(this.renameLog, null, 2), 'utf-8');
-			loggerDebug(this, 'Rename log saved successfully.');
+			const logPath = this.getRenameLogPath(assetPath);
+			const metaDir = path.dirname(logPath);
+					// Ensure the meta directory exists
+			await this.fileService.ensureDirectoryExists(metaDir);
+			
+			// Verify the directory was created
+			const metaDirExists = await this.fileService.exists(metaDir);
+			if (!metaDirExists) {
+				throw new Error(`Failed to create meta directory: ${metaDir}`);
+			}
+			
+			// Use path.resolve to ensure proper path formatting
+			const normalizedLogPath = path.resolve(logPath);
+			await fs.writeFile(normalizedLogPath, JSON.stringify(renameLog, null, 2), 'utf-8');
+			loggerInfo(this, `Rename log saved for asset: ${assetPath} (${renameLog.length} entries) at ${normalizedLogPath}`);
 		} catch (error) {
-			loggerError(this, 'Failed to save rename log', { error });
+			loggerError(this, `Failed to save rename log for asset: ${assetPath}`, { error });
+			// Don't throw - this shouldn't break the rename operation
 		}
 	}
-
-	private addRenameLogEntry(oldPath: string, newPath: string): void {
+	/**
+	 * Add a rename log entry for a specific asset
+	 */
+	private async addRenameLogEntry(assetPath: string, oldPath: string, newPath: string): Promise<void> {
 		const entry: RenameLogEntry = {
 			oldPath,
 			newPath,
 			timestamp: new Date().toISOString(),
 		};
-		this.renameLog.push(entry);
-		// Keep the log from growing indefinitely, e.g., last 1000 renames or by time
-		if (this.renameLog.length > 1000) {
-			this.renameLog.shift(); // Remove the oldest entry
+		
+		const renameLog = await this.loadRenameLog(assetPath);
+		renameLog.push(entry);
+		
+		// Keep the log from growing indefinitely, e.g., last 100 renames per asset
+		if (renameLog.length > 100) {
+			renameLog.shift(); // Remove the oldest entry
 		}
-		this.saveRenameLog();
+		
+		await this.saveRenameLog(assetPath, renameLog);
 	}
 
+	/**
+	 * Get historical paths for a specific asset
+	 */
 	async getHistoricalPaths(currentPath: string): Promise<string[]> {
+		const renameLog = await this.loadRenameLog(currentPath);
 		const history = [currentPath];
 		let pathToCheck = currentPath;
-		// Limit iterations to prevent infinite loops in case of circular references (though unlikely with timestamps)
-		for (let i = 0; i < this.renameLog.length; i++) {
-			const entry = this.renameLog.find(e => e.newPath === pathToCheck);
+		
+		// Limit iterations to prevent infinite loops
+		for (let i = 0; i < renameLog.length && i < 100; i++) {
+			const entry = renameLog.find((e: RenameLogEntry) => e.newPath === pathToCheck);
 			if (entry) {
 				history.push(entry.oldPath);
 				pathToCheck = entry.oldPath;
@@ -112,52 +139,59 @@ export class BackupIntegrityService implements IBackupIntegrityService {
 
 		if (!settings.storeBackupsAdjacent) {
 			loggerInfo(this, 'Backup history preservation for renames/moves is only active for adjacent backups. Skipping.');
-			// For non-adjacent (centralized) backups, rdiff-backup handles paths directly.
+			// For non-adjacent (centralized) backups, restic handles paths directly.
 			// We might still want to log the rename if we were to offer history tracing for centralized backups.
 			return;
 		}
-
 		const oldFileAbsolutePath = this.getAbsolutePathFromVaultPath(oldPath);
 		const newFileAbsolutePath = this.getAbsolutePathFromVaultPath(file.path);
 
-		const oldBackupDirParent = path.dirname(oldFileAbsolutePath);
-		const newBackupDirParent = path.dirname(newFileAbsolutePath);
-
-		const oldBackupDataDir = path.join(oldBackupDirParent, 'rdiff-backup-data');
-		const newBackupDataDir = path.join(newBackupDirParent, 'rdiff-backup-data');
+		// With the new per-file .meta folder structure:
+		// Old file: /path/to/MyAsset.blend -> Meta folder: /path/to/MyAsset.blend.meta
+		// New file: /path/to/NewAsset.blend -> Meta folder: /path/to/NewAsset.blend.meta
+		const oldMetaDir = oldFileAbsolutePath + ASSET_META_SUFFIX;
+		const newMetaDir = newFileAbsolutePath + ASSET_META_SUFFIX;
 
 		try {
-			const oldBackupExists = await this.fileService.exists(oldBackupDataDir);
-
-			if (oldBackupExists) {
-				if (oldBackupDataDir !== newBackupDataDir) {
-					// File moved to a different directory
-					loggerInfo(this, `Asset moved to a new directory. Moving rdiff-backup-data: ${oldBackupDataDir} -> ${newBackupDataDir}`);
-					await this.fileService.ensureDirectoryExists(newBackupDirParent); // Ensure target parent exists
+			const oldMetaExists = await this.fileService.exists(oldMetaDir);			if (oldMetaExists) {
+				if (oldMetaDir !== newMetaDir) {
+					// File moved or renamed - need to move the entire .meta folder
+					loggerInfo(this, `Asset moved/renamed. Moving meta folder: ${oldMetaDir} -> ${newMetaDir}`);
 					
-					// Check if a backup directory already exists at the new location
-					const newBackupDataDirExists = await this.fileService.exists(newBackupDataDir);
-					if (newBackupDataDirExists) {
-						// This case is complex: an asset was moved to a location where another asset (or a previous version of this one)
-						// already had an adjacent backup. We'll archive the existing one at the new location before moving.
-						loggerWarn(this, `Backup data already exists at the new location: ${newBackupDataDir}. Archiving it.`);
-						const archiveName = `rdiff-backup-data.pre-move-archive.${new Date().toISOString().replace(/[:.]/g, '-')}`;
-						const archivePath = path.join(newBackupDirParent, archiveName);
-						await fs.rename(newBackupDataDir, archivePath);
-						new Notice(`Archived existing backup data at new location of ${file.name} to ${archiveName}.`, 5000);
+					// Ensure the parent directory of the new meta folder exists
+					const newMetaDirParent = path.dirname(newMetaDir);
+					await this.fileService.ensureDirectoryExists(newMetaDirParent);
+					
+					// Check if a meta folder already exists at the new location
+					const newMetaDirExists = await this.fileService.exists(newMetaDir);
+					if (newMetaDirExists) {						// This case is complex: an asset was moved to a location where another asset 
+						// already had a meta folder. We'll archive the existing one before moving.
+						loggerWarn(this, `Meta folder already exists at the new location: ${newMetaDir}. Archiving it.`);
+						const archiveName = `${path.basename(newMetaDir)}.pre-move-archive.${new Date().toISOString().replace(/[:.]/g, '-')}`;
+						const archivePath = path.join(path.dirname(newMetaDir), archiveName);
+						await fs.rename(newMetaDir, archivePath);
+						new Notice(`Archived existing meta folder at new location of ${file.name} to ${archiveName}.`, 5000);
+					}					await fs.rename(oldMetaDir, newMetaDir);
+					
+					// Small delay to ensure filesystem operation is completed
+					await new Promise(resolve => setTimeout(resolve, 100));
+					
+					// Verify the move was successful
+					const moveSuccessful = await this.fileService.exists(newMetaDir);
+					if (moveSuccessful) {
+						new Notice(`Moved backup history for ${file.name} to new location.`, 3000);
+					} else {
+						loggerError(this, `Meta folder move failed: ${oldMetaDir} -> ${newMetaDir}`);
+						new Notice(`Error moving backup history for ${file.name}.`, 3000);
+						return; // Don't proceed if move failed
 					}
-					
-					await fs.rename(oldBackupDataDir, newBackupDataDir);
-					new Notice(`Moved backup history for ${file.name} to new location.`, 3000);
 				} else {
-					// File renamed within the same directory. The rdiff-backup-data directory doesn't need to move.
-					// Rdiff-backup will see the old file as missing and the new file as new.
-					// The history for the old filename remains in rdiff-backup-data.
-					loggerInfo(this, `Asset renamed within the same directory: ${path.basename(oldPath)} -> ${file.name}. Backup data directory remains: ${oldBackupDataDir}`);
-					new Notice(`File renamed: ${file.name}. Backup history for old name is preserved.`, 3000);
-				}
-                // Log the rename for history tracking
-				this.addRenameLogEntry(oldPath, file.path);
+					// File renamed within the same location. The meta folder doesn't need to move.
+					// The backup history remains in the same .meta folder.
+					loggerInfo(this, `Asset renamed at same location: ${path.basename(oldPath)} -> ${file.name}. Meta folder remains: ${oldMetaDir}`);
+					new Notice(`File renamed: ${file.name}. Backup history preserved.`, 3000);
+				}                // Log the rename for history tracking
+				await this.addRenameLogEntry(file.path, oldPath, file.path);
 
 				// Update last backup times
 				if (this.lastBackupTimes.has(oldPath)) {
@@ -165,13 +199,10 @@ export class BackupIntegrityService implements IBackupIntegrityService {
 					this.lastBackupTimes.delete(oldPath);
 				}
 
-				loggerInfo(this, `Rename/move handling completed for ${file.path}. Backup history preserved.`);
-
-			} else {
-				loggerInfo(this, `No existing backup data found at ${oldBackupDataDir}. Nothing to move for ${oldPath}.`);
-				// If auto-backup is on, a new backup will be created for the new file eventually or on next save.
-				// We can still log the rename if we want to trace files that never had backups.
-				this.addRenameLogEntry(oldPath, file.path);
+				loggerInfo(this, `Rename/move handling completed for ${file.path}. Backup history preserved.`);			} else {
+				loggerInfo(this, `No existing meta folder found at ${oldMetaDir}. Nothing to move for ${oldPath}.`);
+				// If auto-backup is on, a new backup will be created for the new file eventually or on next save.				// We can still log the rename if we want to trace files that never had backups.
+				await this.addRenameLogEntry(file.path, oldPath, file.path);
 			}
 
 		} catch (error) {

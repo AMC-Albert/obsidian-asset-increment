@@ -5,7 +5,7 @@
  * Abstracts file operations to support testing and different environments
  */
 
-import { App, FileSystemAdapter } from 'obsidian';
+import { App, FileSystemAdapter, TFile, TFolder } from 'obsidian';
 import { IFileService, FileStats, FileSystemError } from './interfaces';
 import { 
 	loggerDebug, 
@@ -14,6 +14,8 @@ import {
 	loggerError,
 	registerLoggerClass 
 } from '../utils/obsidian-logger';
+import { AssetIncrementSettings } from '../types';
+import { ASSET_META_SUFFIX } from '../constants'; // Import the new constant
 
 // Use require for Node.js modules in Obsidian
 const fs = require('fs/promises');
@@ -158,30 +160,43 @@ export class DefaultFileService implements IFileService {
 		loggerDebug(this, `Converted to absolute path: ${relativePath} -> ${absolutePath}`);
 		return absolutePath;
 	}
-	
-	async getBackupLocation(file: any, useAdjacentStorage: boolean = false): Promise<string> {
-		if (!this.vaultPath) {
-			throw new FileSystemError('Vault path not available for backup location');
-		}
+		getBackupLocation(file: TFile, settings: AssetIncrementSettings): string {
+		const useAdjacentStorage = settings.storeBackupsAdjacent;
 		
-		const fileName = file.name || file.basename || 'unknown';
+		// const fileName = file.name || file.basename || 'unknown'; // Not directly needed for path construction with file.path
 		
 		if (useAdjacentStorage) {
-			// Use the parent directory as the backup repository
-			// This way the original file stays in place and only rdiff-backup-data is added
-			const filePath = file.path || fileName;
-			const fileAbsolutePath = this.getAbsolutePath(filePath);
+			// For adjacent storage, the backup repository is a folder named after the file, with a suffix.
+			// e.g., for "MyAsset.blend", the repo is "MyAsset.blend.meta" in the same directory.
+			const fileAbsolutePath = this.getAbsolutePath(file.path); // Use file.path
 			const parentDir = path.dirname(fileAbsolutePath);
+			const metaFolderName = path.basename(fileAbsolutePath) + ASSET_META_SUFFIX;
+			const backupRepoPath = path.join(parentDir, metaFolderName);
 			
-			loggerDebug(this, `Generated adjacent backup location: ${filePath} -> ${parentDir} (parent directory as repository)`);			return parentDir;
+			loggerDebug(this, `Generated adjacent backup location for ${file.path}: ${backupRepoPath}`);
+			return backupRepoPath;
 		} else {
-			// Original behavior: Create backup directory structure in plugin folder
-			const pluginDir = path.join(this.vaultPath, '.obsidian', 'plugins', 'asset-increment');
-			const backupDir = path.join(pluginDir, 'backups');
-			const backupPath = path.join(backupDir, fileName);
+			// For global storage, replicate the vault's folder structure within the global backup directory,
+			// and then create the .meta folder for the specific file.
+			let globalBackupDir = settings.globalBackupDir;
+			if (!path.isAbsolute(globalBackupDir)) {
+				globalBackupDir = path.join(this.vaultPath!, globalBackupDir);
+			}
+
+			// file.path is already relative to the vault root, e.g., "Assets/SubFolder/MyAsset.blend"
+			const relativeFilePath = file.path;
 			
-			loggerDebug(this, `Generated centralized backup location: ${file.path || fileName} -> ${backupPath}`);
-			return backupPath;
+			// The base for the .meta folder will be the file's path within the global backup dir structure
+			// e.g., globalBackupDir/Assets/SubFolder/MyAsset.blend
+			const targetFileBasePathInGlobalDir = path.join(globalBackupDir, relativeFilePath);
+			
+			const metaFolderName = path.basename(relativeFilePath) + ASSET_META_SUFFIX;
+			// Place the .meta folder adjacent to where the file *would* be in the backup structure
+			// e.g., globalBackupDir/Assets/SubFolder/MyAsset.blend.meta
+			const finalBackupRepoPath = path.join(path.dirname(targetFileBasePathInGlobalDir), metaFolderName);
+
+			loggerDebug(this, `Generated global backup location for ${file.path}: ${finalBackupRepoPath}`);
+			return finalBackupRepoPath;
 		}
 	}
 
@@ -215,17 +230,18 @@ export class DefaultFileService implements IFileService {
 		loggerDebug(this, `Should use compression for ${fileSize} bytes: ${shouldCompress}`);
 		return shouldCompress;
 	}
-
 	async ensureDirectoryExists(dirPath: string): Promise<void> {
 		try {
-			const exists = await this.exists(dirPath);
+			// Normalize the path to use the correct separators for the platform
+			const normalizedPath = path.resolve(dirPath);
+			
+			const exists = await this.exists(normalizedPath);
 			if (!exists) {
-				// This would need to be implemented with fs.mkdir
-				// For now, just log that we would create it
-				loggerInfo(this, `Would create directory: ${dirPath}`);
-				// throw new FileSystemError(`Directory creation not implemented: ${dirPath}`);
+				loggerInfo(this, `Creating directory: ${normalizedPath}`);
+				await fs.mkdir(normalizedPath, { recursive: true });
+				loggerInfo(this, `Directory created successfully: ${normalizedPath}`);
 			} else {
-				loggerDebug(this, `Directory exists: ${dirPath}`);
+				loggerDebug(this, `Directory exists: ${normalizedPath}`);
 			}
 		} catch (error) {
 			const errorMessage = `Failed to ensure directory exists: ${dirPath}`;

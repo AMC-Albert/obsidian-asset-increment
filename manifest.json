@@ -3,7 +3,7 @@
 	"name": "Asset Increment",
 	"version": "0.0.2",
 	"minAppVersion": "0.15.0",
-	"description": "Incremental asset versioning using rdiff-backup for efficient binary file management.",
+	"description": "Incremental asset versioning using restic for efficient binary file management.",
 	"author": "Albert O'Shea",
 	"authorUrl": "",
 	"isDesktopOnly": true

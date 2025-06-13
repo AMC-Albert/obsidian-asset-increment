@@ -133,10 +133,11 @@ export interface IFileService {
 	 * Get the absolute path for a file
 	 */
 	getAbsolutePath(relativePath: string): string;
+	
 	/**
 	 * Get the backup location for a file
 	 */
-	getBackupLocation(file: TFile, useAdjacentStorage?: boolean): Promise<string>;
+	getBackupLocation(file: TFile, settings: AssetIncrementSettings): string;
 
 	/**
 	 * Get the size of a file in bytes

@@ -11,7 +11,7 @@ export enum LogLevel {
 export interface AssetIncrementSettings {
 	backupFrequency: number;
 	maxBackupAgeDays: number;
-	rdiffBackupPath: string;
+	resticPath: string;
 	showBackupNotifications: boolean;
 	autoBackupOnSave: boolean;
 	autoBackupIntervalMinutes: number;
@@ -32,6 +32,7 @@ export interface BackupOptions {
 	exclude?: string[];
 	include?: string[];
 	force?: boolean;
+	tag?: string;
 }
 
 export interface RestoreOptions {
@@ -57,6 +58,8 @@ export interface BackupStatistics {
 	elapsedTime: number;
 	compressionRatio?: number;
 	spaceSavings?: number;
+	sourceFiles?: number;
+	sourceSize?: number;
 }
 
 export interface BackupIncrement {
@@ -76,16 +79,17 @@ export interface AssetInfo {
 	compressionRatio: number;
 }
 
-export interface RdiffCommand {
+export interface ResticCommand {
 	command: string;
 	args: string[];
 	workingDirectory?: string;
+	env?: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: AssetIncrementSettings = {
 	backupFrequency: 24 * 60 * 60 * 1000, // Default to 1 day
 	maxBackupAgeDays: 30,
-	rdiffBackupPath: 'rdiff-backup', // Default path, user should configure if not in PATH
+	resticPath: 'restic', // Default path, user should configure if not in PATH
 	showBackupNotifications: true,
 	autoBackupOnSave: true,
 	autoBackupIntervalMinutes: 5,

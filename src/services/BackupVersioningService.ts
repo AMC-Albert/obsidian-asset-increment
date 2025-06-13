@@ -2,7 +2,7 @@
  * Backup versioning service for metadata-only version tracking
  * 
  * Tracks backup increments as versions (001, 002, 003, etc.) without modifying original filenames.
- * Versions are metadata that correspond to rdiff-backup increments.
+ * Versions are metadata that correspond to restic increments.
  */
 
 import { IFileService } from './interfaces';
@@ -26,7 +26,7 @@ export interface BackupVersionInfo {
 
 export interface AssetBackupHistory {
 	assetPath: string;              // Original file path (unchanged)
-	backupRepository: string;       // rdiff-backup repository path
+	backupRepository: string;       // restic repository path
 	currentVersion: string;         // Latest version number (e.g., "003")
 	versions: BackupVersionInfo[];  // All backup versions
 	totalVersions: number;          // Total number of backups
@@ -124,7 +124,7 @@ export class BackupVersioningService {
 
 	/**
 	 * Get backup history for an asset
-	 * This would typically read from rdiff-backup increments and map them to versions
+	 * This would typically read from restic increments and map them to versions
 	 */
 	async getBackupHistory(assetPath: string, backupPath: string): Promise<AssetBackupHistory> {
 		try {
@@ -132,7 +132,7 @@ export class BackupVersioningService {
 			
 			// For now, return a basic history structure
 			// In a full implementation, this would:
-			// 1. Read rdiff-backup increments from the backup repository
+			// 1. Read restic increments from the backup repository
 			// 2. Map each increment to a version number
 			// 3. Extract timestamp and size information
 			
@@ -142,7 +142,7 @@ export class BackupVersioningService {
 			// Check if backup repository exists
 			const backupExists = await this.fileService.exists(backupPath);
 			if (backupExists) {
-				// This is a placeholder - in reality you'd read rdiff-backup data
+				// This is a placeholder - in reality you'd read restic data
 				// For now, assume there's at least one backup if the directory exists
 				const stats = await this.fileService.getStats(backupPath);
 				

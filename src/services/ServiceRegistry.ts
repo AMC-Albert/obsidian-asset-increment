@@ -14,7 +14,7 @@ import {
 	ISettingsService 
 } from './interfaces';
 import { DefaultFileService } from './DefaultFileService';
-import { RdiffBackupService } from './RdiffBackupService';
+import { ResticBackupService } from './ResticBackupService';
 import { DefaultAssetService } from './DefaultAssetService';
 import { PluginSettingsService } from './PluginSettingsService';
 import { CommandService } from './CommandService';
@@ -86,11 +86,11 @@ export class ServiceRegistry {
 
 		// 4. Backup service (depends on file and command services)
 		const settings = settingsService.getSettings();
-		const backupService = new RdiffBackupService(
+		const backupService = new ResticBackupService(
 			fileService,
 			commandService,
 			this.pluginDir,
-			settings.rdiffBackupPath
+			settings.resticPath
 		);
 		this.services.set('backup', backupService);
 		loggerDebug(this, 'Backup service created');

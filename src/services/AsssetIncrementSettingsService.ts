@@ -48,7 +48,7 @@ export class AsssetIncrementSettingsService implements ISettingsService {
 			
 			// Validate settings
 			this.validateSettings(this.currentSettings);			loggerDebug(this, 'Current settings', { 
-				rdiffBackupPath: this.currentSettings.rdiffBackupPath,
+				resticPath: this.currentSettings.resticPath,
 				globalBackupDir: this.currentSettings.globalBackupDir,
 				autoBackupOnSave: this.currentSettings.autoBackupOnSave,
 				logLevel: this.currentSettings.logLevel
@@ -108,8 +108,8 @@ export class AsssetIncrementSettingsService implements ISettingsService {
 		const errors: string[] = [];
 
 		// Validate required string properties
-		if (!settings.rdiffBackupPath || typeof settings.rdiffBackupPath !== 'string') {
-			errors.push('rdiffExecutablePath must be a non-empty string');
+		if (!settings.resticPath || typeof settings.resticPath !== 'string') {
+			errors.push('resticExecutablePath must be a non-empty string');
 		}
 
 		if (!settings.globalBackupDir || typeof settings.globalBackupDir !== 'string') {

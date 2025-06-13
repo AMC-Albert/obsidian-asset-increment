@@ -40,32 +40,32 @@ export class AssetIncrementSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		// rdiff-backup Configuration
-		new Setting(containerEl).setName('rdiff-backup Configuration').setHeading();
+		// restic Configuration
+		new Setting(containerEl).setName('restic Configuration').setHeading();
 		
 		new Setting(containerEl)
-			.setName('rdiff-backup executable path')
-			.setDesc('Path to the rdiff-backup executable. Use "rdiff-backup" if it\'s in your PATH.')
+			.setName('restic executable path')
+			.setDesc('Path to the restic executable. Use "restic" if it\'s in your PATH.')
 			.addText(text => {
-				text.setPlaceholder('rdiff-backup')
-					.setValue(settings.rdiffBackupPath);
+				text.setPlaceholder('restic')
+					.setValue(settings.resticPath);
 
 				const handleValidation = async () => {
 					const currentValue = text.inputEl.value.trim();
 					if (currentValue.length > 0) {
-						if (settings.rdiffBackupPath !== currentValue) {
+						if (settings.resticPath !== currentValue) {
 							try {
-								await this.settingsService.updateSetting('rdiffBackupPath', currentValue);
+								await this.settingsService.updateSetting('resticPath', currentValue);
 								loggerInfo(this, 'Updated rdiff executable path', { path: currentValue });
 							} catch (error) {
-								new Notice('Failed to update rdiff-backup executable path.');
-								text.setValue(settings.rdiffBackupPath);
+								new Notice('Failed to update restic executable path.');
+								text.setValue(settings.resticPath);
 								loggerError(this, 'Failed to update rdiff path', { error });
 							}
 						}
 					} else {
-						new Notice('rdiff-backup executable path cannot be empty.');
-						text.setValue(settings.rdiffBackupPath);
+						new Notice('restic executable path cannot be empty.');
+						text.setValue(settings.resticPath);
 					}
 				};
 
@@ -83,7 +83,7 @@ export class AssetIncrementSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Store backups adjacent to files')
-			.setDesc('If enabled, backup data will be stored in rdiff-backup-data directories next to the original files. If disabled, backups will be stored in a global backup directory.')
+			.setDesc('If enabled, backup data will be stored in restic-data directories next to the original files. If disabled, backups will be stored in a global backup directory.')
 			.addToggle(toggle => toggle
 				.setValue(settings.storeBackupsAdjacent)
 				.onChange(async (value) => {
