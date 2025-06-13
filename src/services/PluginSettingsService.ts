@@ -7,7 +7,7 @@
 
 import { Plugin } from 'obsidian';
 import { ISettingsService } from './interfaces';
-import { AssetIncrementSettings } from '../types';
+import { AssetIncrementSettings, DEFAULT_SETTINGS } from '../types';
 import { 
 	loggerDebug, 
 	loggerInfo, 
@@ -15,21 +15,6 @@ import {
 	loggerError,
 	registerLoggerClass 
 } from '../utils/obsidian-logger';
-
-export const DEFAULT_SETTINGS: AssetIncrementSettings = {
-	rdiffExecutablePath: 'rdiff-backup',
-	backupDirectory: 'backups',
-	storeBackupsAdjacentToFiles: false,
-	monitoredExtensions: ['blend', 'blend1', 'blend2'],
-	autoBackupOnSave: true,
-	showEfficiencyNotifications: true,
-	compressionWarningThreshold: 1, // 1MB converted to MB
-	cleanupAfterDays: 30,
-	maxBackupSizeGB: 10,
-	verboseLogging: false,
-	allowParallelOperations: false,
-	customRdiffArgs: ''
-};
 
 export class PluginSettingsService implements ISettingsService {
 	private plugin: Plugin;
@@ -63,11 +48,11 @@ export class PluginSettingsService implements ISettingsService {
 			
 			// Validate settings
 			this.validateSettings(this.currentSettings);
-					loggerDebug(this, 'Current settings', { 
-				rdiffExecutablePath: this.currentSettings.rdiffExecutablePath,
-				backupDirectory: this.currentSettings.backupDirectory,
+			loggerDebug(this, 'Current settings', { 
+				rdiffBackupPath: this.currentSettings.rdiffBackupPath,
+				globalBackupDir: this.currentSettings.globalBackupDir,
 				autoBackupOnSave: this.currentSettings.autoBackupOnSave,
-				verboseLogging: this.currentSettings.verboseLogging
+				logLevel: this.currentSettings.logLevel
 			});
 			
 			return this.currentSettings;
@@ -124,32 +109,33 @@ export class PluginSettingsService implements ISettingsService {
 		const errors: string[] = [];
 
 		// Validate required string properties
-		if (!settings.rdiffExecutablePath || typeof settings.rdiffExecutablePath !== 'string') {
+		if (!settings.rdiffBackupPath || typeof settings.rdiffBackupPath !== 'string') {
 			errors.push('rdiffExecutablePath must be a non-empty string');
 		}
-
-		if (!settings.backupDirectory || typeof settings.backupDirectory !== 'string') {
-			errors.push('backupDirectory must be a non-empty string');
+		// Validate required string properties
+		if (!settings.rdiffBackupPath || typeof settings.rdiffBackupPath !== 'string') {
+			errors.push('rdiffBackupPath must be a non-empty string');
 		}
 
-		if (!settings.customRdiffArgs || typeof settings.customRdiffArgs !== 'string') {
-			// customRdiffArgs can be empty, but must be a string
-			if (typeof settings.customRdiffArgs !== 'string') {
-				errors.push('customRdiffArgs must be a string');
-			}
+		if (typeof settings.globalBackupDir !== 'string') {
+			errors.push('globalBackupDir must be a string');
 		}
 
 		// Validate numeric properties
-		if (typeof settings.compressionWarningThreshold !== 'number' || settings.compressionWarningThreshold < 0) {
-			errors.push('compressionWarningThreshold must be a non-negative number');
+		if (typeof settings.maxBackupAgeDays !== 'number' || settings.maxBackupAgeDays < 0) {
+			errors.push('maxBackupAgeDays must be a non-negative number');
 		}
 
-		if (typeof settings.cleanupAfterDays !== 'number' || settings.cleanupAfterDays < 0) {
-			errors.push('cleanupAfterDays must be a non-negative number');
+		if (typeof settings.backupFrequency !== 'number' || settings.backupFrequency < 0) {
+			errors.push('backupFrequency must be a non-negative number');
 		}
 
-		if (typeof settings.maxBackupSizeGB !== 'number' || settings.maxBackupSizeGB < 0) {
-			errors.push('maxBackupSizeGB must be a non-negative number');
+		if (typeof settings.autoBackupIntervalMinutes !== 'number' || settings.autoBackupIntervalMinutes < 0) {
+			errors.push('autoBackupIntervalMinutes must be a non-negative number');
+		}
+
+		if (typeof settings.minBackupIntervalSeconds !== 'number' || settings.minBackupIntervalSeconds < 0) {
+			errors.push('minBackupIntervalSeconds must be a non-negative number');
 		}
 
 		// Validate boolean properties
@@ -157,27 +143,31 @@ export class PluginSettingsService implements ISettingsService {
 			errors.push('autoBackupOnSave must be a boolean');
 		}
 
+		if (typeof settings.showBackupNotifications !== 'boolean') {
+			errors.push('showBackupNotifications must be a boolean');
+		}
+
 		if (typeof settings.showEfficiencyNotifications !== 'boolean') {
 			errors.push('showEfficiencyNotifications must be a boolean');
 		}
 
-		if (typeof settings.verboseLogging !== 'boolean') {
-			errors.push('verboseLogging must be a boolean');
+		if (typeof settings.preventDuplicateBackups !== 'boolean') {
+			errors.push('preventDuplicateBackups must be a boolean');
 		}
 
-		if (typeof settings.allowParallelOperations !== 'boolean') {
-			errors.push('allowParallelOperations must be a boolean');
+		if (typeof settings.useGlobalBackupDir !== 'boolean') {
+			errors.push('useGlobalBackupDir must be a boolean');
 		}
 
-		if (typeof settings.storeBackupsAdjacentToFiles !== 'boolean') {
-			errors.push('storeBackupsAdjacentToFiles must be a boolean');
+		if (typeof settings.storeBackupsAdjacent !== 'boolean') {
+			errors.push('storeBackupsAdjacent must be a boolean');
 		}
 
 		// Validate array properties
-		if (!Array.isArray(settings.monitoredExtensions)) {
-			errors.push('monitoredExtensions must be an array');
-		} else if (settings.monitoredExtensions.some((ext: any) => typeof ext !== 'string')) {
-			errors.push('all monitoredExtensions must be strings');
+		if (!Array.isArray(settings.backupFileExtensions)) {
+			errors.push('backupFileExtensions must be an array');
+		} else if (settings.backupFileExtensions.some((ext: any) => typeof ext !== 'string')) {
+			errors.push('all backupFileExtensions must be strings');
 		}
 
 		if (errors.length > 0) {

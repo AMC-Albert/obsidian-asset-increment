@@ -1,18 +1,29 @@
 import type { Plugin } from 'obsidian';
 
+export enum LogLevel {
+	DEBUG = 'DEBUG',
+	INFO = 'INFO',
+	WARN = 'WARN',
+	ERROR = 'ERROR',
+	NONE = 'NONE' // No logging
+}
+
 export interface AssetIncrementSettings {
-	rdiffExecutablePath: string;
-	backupDirectory: string;
-	storeBackupsAdjacentToFiles: boolean; // Store backup data next to the original file
-	monitoredExtensions: string[];
+	backupFrequency: number;
+	maxBackupAgeDays: number;
+	rdiffBackupPath: string;
+	showBackupNotifications: boolean;
 	autoBackupOnSave: boolean;
+	autoBackupIntervalMinutes: number;
+	storeBackupsAdjacent: boolean;
+	logLevel: LogLevel; // Keep LogLevel
+	backupFileExtensions: string[];
+	excludePatterns: string[];
+	useGlobalBackupDir: boolean;
+	globalBackupDir: string;
 	showEfficiencyNotifications: boolean;
-	compressionWarningThreshold: number; // MB
-	cleanupAfterDays: number;
-	maxBackupSizeGB: number;
-	verboseLogging: boolean;
-	allowParallelOperations: boolean;
-	customRdiffArgs: string;
+	preventDuplicateBackups: boolean;
+	minBackupIntervalSeconds: number;
 }
 
 export interface BackupOptions {
@@ -72,18 +83,21 @@ export interface RdiffCommand {
 }
 
 export const DEFAULT_SETTINGS: AssetIncrementSettings = {
-	rdiffExecutablePath: 'rdiff-backup',
-	backupDirectory: '.asset-backups',
-	storeBackupsAdjacentToFiles: false,
-	monitoredExtensions: ['blend', 'blend1', 'blend2'],
-	autoBackupOnSave: false,
+	backupFrequency: 24 * 60 * 60 * 1000, // Default to 1 day
+	maxBackupAgeDays: 30,
+	rdiffBackupPath: 'rdiff-backup', // Default path, user should configure if not in PATH
+	showBackupNotifications: true,
+	autoBackupOnSave: true,
+	autoBackupIntervalMinutes: 5,
+	storeBackupsAdjacent: true,
+	logLevel: LogLevel.INFO, // Keep LogLevel
+	backupFileExtensions: ['.blend', '.psd', '.kra', '.xcf', '.pdf', '.ai', '.svg', '.indd', '.afphoto', '.afdesign', '.afpub'],
+	excludePatterns: [],
+	useGlobalBackupDir: false,
+	globalBackupDir: '',
 	showEfficiencyNotifications: true,
-	compressionWarningThreshold: 50, // MB
-	cleanupAfterDays: 30,
-	maxBackupSizeGB: 10,
-	verboseLogging: false,
-	allowParallelOperations: false,
-	customRdiffArgs: ''
+	preventDuplicateBackups: true,
+	minBackupIntervalSeconds: 60,
 };
 
 export const SUPPORTED_ASSET_EXTENSIONS = [

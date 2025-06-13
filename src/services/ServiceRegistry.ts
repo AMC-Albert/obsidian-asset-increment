@@ -18,6 +18,7 @@ import { RdiffBackupService } from './RdiffBackupService';
 import { DefaultAssetService } from './DefaultAssetService';
 import { PluginSettingsService } from './PluginSettingsService';
 import { CommandService } from './CommandService';
+import { BackupIntegrityService, IBackupIntegrityService } from './BackupIntegrityService';
 import { 
 	loggerDebug, 
 	loggerInfo, 
@@ -89,11 +90,10 @@ export class ServiceRegistry {
 			fileService,
 			commandService,
 			this.pluginDir,
-			settings.rdiffExecutablePath
+			settings.rdiffBackupPath
 		);
 		this.services.set('backup', backupService);
 		loggerDebug(this, 'Backup service created');
-
 		// 5. Asset service (depends on backup, file, and settings services)
 		const assetService = new DefaultAssetService(
 			backupService,
@@ -104,7 +104,7 @@ export class ServiceRegistry {
 		loggerDebug(this, 'Asset service created');
 
 		loggerInfo(this, 'All service instances created');
-	}	/**
+	}/**
 	 * Initialize services that require async initialization
 	 */
 	private async initializeServices(): Promise<void> {
@@ -186,9 +186,21 @@ export class ServiceRegistry {
 	getBackupService(): IBackupService {
 		return this.getService<IBackupService>('backup');
 	}
-
 	getAssetService(): IAssetService {
 		return this.getService<IAssetService>('asset');
+	}
+
+	/**
+	 * Create BackupIntegrityService on demand (since it needs runtime state)
+	 */	createBackupIntegrityService(lastBackupTimes: Map<string, number>): IBackupIntegrityService {
+		return new BackupIntegrityService(
+			this.plugin.app,
+			this.getSettingsService(),
+			this.getAssetService(),
+			this.getFileService(),
+			this.getBackupService(),
+			lastBackupTimes
+		);
 	}
 
 	/**

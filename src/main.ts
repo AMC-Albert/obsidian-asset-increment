@@ -1,5 +1,5 @@
-import { Plugin, TFile, Notice, FileSystemAdapter } from 'obsidian';
-import { ServiceRegistry, IAssetService, ISettingsService, AssetIncrementSettingTab } from './services';
+import { Plugin, TFile, TAbstractFile, Notice, FileSystemAdapter } from 'obsidian';
+import { ServiceRegistry, IAssetService, ISettingsService, IFileService, AssetIncrementSettingTab, IBackupIntegrityService } from './services';
 import { AssetIncrementSettings } from './types';
 import { 
 	loggerDebug, 
@@ -17,7 +17,10 @@ const path = require('path');
 export default class AssetIncrementPluginImpl extends Plugin {
 	private serviceRegistry!: ServiceRegistry;
 	private assetService!: IAssetService;
-	private settingsService!: ISettingsService;	settings!: AssetIncrementSettings;
+	private settingsService!: ISettingsService;
+	private fileService!: IFileService;
+	private backupIntegrityService!: IBackupIntegrityService;
+	settings!: AssetIncrementSettings;
 		// Timeout-based auto-backup delay
 	private autoBackupTimeouts = new Map<string, NodeJS.Timeout>();
 	private lastBackupTimes = new Map<string, number>();
@@ -48,14 +51,18 @@ export default class AssetIncrementPluginImpl extends Plugin {
 			loggerDebug(this, 'ServiceRegistry created, initializing...');
 			
 			await this.serviceRegistry.initialize();
-			loggerDebug(this, 'ServiceRegistry initialized');
-
-			// Get service references
+			loggerDebug(this, 'ServiceRegistry initialized');			// Get service references
 			this.settingsService = this.serviceRegistry.getSettingsService();
 			loggerDebug(this, 'SettingsService obtained');
 			
 			this.assetService = this.serviceRegistry.getAssetService();
 			loggerDebug(this, 'AssetService obtained');
+					this.fileService = this.serviceRegistry.getFileService();
+			loggerDebug(this, 'FileService obtained');
+			
+			// Create BackupIntegrityService (depends on other services + runtime state)
+			this.backupIntegrityService = this.serviceRegistry.createBackupIntegrityService(this.lastBackupTimes);
+			loggerDebug(this, 'BackupIntegrityService created');
 			
 			this.settings = this.settingsService.getSettings();
 			loggerDebug(this, 'Settings loaded');
@@ -147,7 +154,7 @@ export default class AssetIncrementPluginImpl extends Plugin {
 		if (!settings) return false;
 		
 		const extension = file.extension.toLowerCase();
-		return settings.monitoredExtensions.some(ext => 
+		return settings.backupFileExtensions.some(ext => 
 			ext.toLowerCase() === extension || ext.toLowerCase() === `.${extension}`
 		);
 	}
@@ -338,16 +345,51 @@ export default class AssetIncrementPluginImpl extends Plugin {
 					// Store the timeout ID so we can clear it if needed
 					this.autoBackupTimeouts.set(file.path, timeoutId);
 					loggerDebug(this, `Scheduled auto-backup for: ${file.path} in ${this.BACKUP_DELAY_MS}ms`);
+				}			})
+		);
+		// Handle file renames/moves for adjacent backup repositories
+		this.registerEvent(
+			this.app.vault.on('rename', async (file: TAbstractFile, oldPath: string) => {
+				if (file instanceof TFile && this.isSupportedAsset(file)) {
+					const currentSettings = this.settingsService.getSettings();
+					if (currentSettings.storeBackupsAdjacent) {
+						try {
+							await this.backupIntegrityService.handleFileRename(file, oldPath);
+						} catch (error) {
+							loggerError(this, 'Failed to handle file rename for adjacent backup', { 
+								oldPath, 
+								newPath: file.path, 
+								error 
+							});
+						}
+					}
 				}
 			})
 		);
 	}
-
 	private formatBytes(bytes: number): string {
 		if (bytes === 0) return '0 B';
 		const k = 1024;
 		const sizes = ['B', 'KB', 'MB', 'GB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+	}
+
+	/**
+	 * Helper to move a directory (rdiff-backup-data) to a new location
+	 * This is still used by other parts of the plugin for non-rename operations
+	 */
+	private async moveDirectory(sourcePath: string, destinationPath: string): Promise<void> {
+		// Use Node.js fs operations to move the directory
+		const fs = require('fs/promises');
+		
+		// Check if destination already exists
+		if (await this.fileService.exists(destinationPath)) {
+			throw new Error(`Destination directory already exists: ${destinationPath}`);
+		}
+		
+		// Move the directory
+		await fs.rename(sourcePath, destinationPath);
+		loggerDebug(this, `Directory moved: ${sourcePath} -> ${destinationPath}`);
 	}
 }

@@ -157,7 +157,9 @@ export class DefaultFileService implements IFileService {
 		const absolutePath = path.join(this.vaultPath, relativePath);
 		loggerDebug(this, `Converted to absolute path: ${relativePath} -> ${absolutePath}`);
 		return absolutePath;
-	}	async getBackupLocation(file: any, useAdjacentStorage: boolean = false): Promise<string> {
+	}
+	
+	async getBackupLocation(file: any, useAdjacentStorage: boolean = false): Promise<string> {
 		if (!this.vaultPath) {
 			throw new FileSystemError('Vault path not available for backup location');
 		}

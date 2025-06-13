@@ -46,7 +46,7 @@ export class AssetManager {
 			calculatedPluginDir: pluginDir
 		});
 			
-		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffExecutablePath, pluginDir);
+		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffBackupPath, pluginDir);
 		
 		// Store vault base path for later use
 		this.vaultPath = vaultBasePath;
@@ -67,7 +67,7 @@ export class AssetManager {
 	isSupportedAsset(file: TFile | string): boolean {
 		const path = typeof file === 'string' ? file : file.path;
 		const ext = extname(path).toLowerCase().replace('.', '');
-		return this.settings.monitoredExtensions.includes(ext);
+		return this.settings.backupFileExtensions.includes(ext);
 	}
 
 	/**
@@ -244,9 +244,9 @@ export class AssetManager {
 			const increments = await this.rdiffWrapper.listIncrements(backupLocation);
 
 			// Use cleanupAfterDays setting for cleanup
-			if (this.settings.cleanupAfterDays > 0) {
+			if (this.settings.maxBackupAgeDays > 0) {
 				const cutoffDate = new Date();
-				cutoffDate.setDate(cutoffDate.getDate() - this.settings.cleanupAfterDays);
+				cutoffDate.setDate(cutoffDate.getDate() - this.settings.maxBackupAgeDays);
 				
 				const oldIncrements = increments.filter(inc => {
 					const incDate = new Date(inc.timestamp);
@@ -279,7 +279,7 @@ export class AssetManager {
 		this.settings = settings;
 		// Update settings reference
 		this.settings = settings;
-		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffExecutablePath);
+		this.rdiffWrapper = new RdiffBackupWrapper(settings.rdiffBackupPath);
 		this.assetsCache.clear(); // Clear cache as backup locations might have changed
 	}
 	/**
@@ -313,7 +313,7 @@ export class AssetManager {
 	 * Get the backup directory path
 	 */
 	private getBackupDirectory(): string {
-		return this.settings.backupDirectory;
+		return this.settings.globalBackupDir;
 	}
 
 	/**
@@ -413,7 +413,7 @@ export class AssetManager {
 		const adapter = this.vault.adapter as any;
 		const basePath = adapter.basePath || adapter.path || '';
 		
-		if (this.settings.storeBackupsAdjacentToFiles) {
+		if (this.settings.storeBackupsAdjacent) {
 			// Store backup data adjacent to the original file
 			const filePath = join(basePath, file.path);
 			const fileDir = dirname(filePath);
@@ -425,7 +425,7 @@ export class AssetManager {
 		} else {
 			// Original behavior: Use centralized backup directory
 			const relativePath = file.path.replace(/[/\\]/g, '_').replace(/\./g, '_');
-			const backupDir = this.settings.backupDirectory || 
+			const backupDir = this.settings.globalBackupDir || 
 				join(basePath, '.asset-backups');
 			
 			return join(backupDir, relativePath);

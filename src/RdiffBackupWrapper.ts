@@ -323,7 +323,7 @@ export class RdiffBackupWrapper {
 		try {
 			const command: RdiffCommand = {
 				command: this.rdiffPath,
-				args: ['list', 'increments', destinationPath]
+				args: ['--api-version', '201', 'list', 'increments', destinationPath]
 			};
 
 			const result = await this.executeCommand(command);
@@ -345,11 +345,10 @@ export class RdiffBackupWrapper {
 	 */
 	async getInfo(destinationPath: string): Promise<BackupResult> {
 		loggerDebug(this, `Getting info for: ${destinationPath}`);
-
 		try {
 			const command: RdiffCommand = {
 				command: this.rdiffPath,
-				args: ['info', destinationPath]
+				args: ['--api-version', '201', 'info', destinationPath]
 			};
 
 			return await this.executeCommand(command);
@@ -370,11 +369,10 @@ export class RdiffBackupWrapper {
 	 */
 	async verify(destinationPath: string): Promise<BackupResult> {
 		loggerDebug(this, `Verifying repository: ${destinationPath}`);
-
 		try {
 			const command: RdiffCommand = {
 				command: this.rdiffPath,
-				args: ['verify', destinationPath]
+				args: ['--api-version', '201', 'verify', destinationPath]
 			};
 
 			const result = await this.executeCommand(command);
@@ -466,9 +464,8 @@ export class RdiffBackupWrapper {
 			args
 		};
 	}
-
 	private buildRestoreCommand(destinationPath: string, restorePath: string, options: RestoreOptions): RdiffCommand {
-		const args = ['restore'];
+		const args = ['--api-version', '201', 'restore'];
 
 		if (options.at) {
 			args.push('--at', options.at);
@@ -641,19 +638,22 @@ export class RdiffBackupWrapper {
 
 		return stats as BackupStatistics;
 	}
-
 	private parseIncrements(output: string): BackupIncrement[] {
 		const increments: BackupIncrement[] = [];
 		const lines = output.trim().split('\n');
 
 		for (const line of lines) {
-			if (line.trim() === '' || line.includes('Found')) continue;
+			if (line.trim() === '' || line.includes('Found') || line.includes('Current mirror')) continue;
 
-			// Parse rdiff-backup increment output format
-			const match = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})/);
+			// Parse rdiff-backup increment output format (API v201)
+			// Format: "    increments.2025-06-13T12-25-58+10-00.dir   Fri Jun 13 12:25:58 2025"
+			const match = line.match(/increments\.(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}[+-]\d{2}-\d{2})\.dir/);
 			if (match) {
+				// Convert the timestamp format from 2025-06-13T12-25-58+10-00 to 2025-06-13T12:25:58+10:00
+				const timestamp = match[1].replace(/-(\d{2})-(\d{2})\+(\d{2})-(\d{2})$/, ':$1:$2+$3:$4');
+				
 				increments.push({
-					timestamp: match[1],
+					timestamp: timestamp,
 					size: 0, // Would need additional parsing for size
 					isSnapshot: line.includes('snapshot'),
 					description: line.trim()
